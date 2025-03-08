@@ -1,6 +1,7 @@
 package com.surendramaran.yolov8tflite
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -8,7 +9,6 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.View
-import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -26,6 +26,7 @@ import com.surendramaran.yolov8tflite.databinding.ActivityMainBinding
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
 
 class MainActivity : AppCompatActivity(), Detector.DetectorListener, TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
@@ -59,32 +60,51 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener, TextToSpeec
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
-        // Debug log to see which emotions we're checking for
-        if (debugMode) {
-            Log.d(TAG, "Emotions to detect: $emotions")
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+
+            // Initialize lightweight UI components first
+            setupSignLanguageUI()
+
+            // Initialize Text-to-Speech (lightweight)
+            textToSpeech = TextToSpeech(this, this)
+
+            // Defer heavy initialization
+            binding.root.post {
+                // Initialize camera executor
+                cameraExecutor = Executors.newSingleThreadExecutor()
+
+                // Initialize detector on background thread
+                cameraExecutor.execute {
+                    try {
+                        detector = Detector(baseContext, MODEL_PATH, LABELS_PATH, this)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error initializing detector", e)
+                    }
+                }
+
+                // Check permissions and setup camera
+                if (allPermissionsGranted()) {
+                    setupCamera()
+                } else {
+                    ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onCreate", e)
+            Toast.makeText(this, "Error initializing app", Toast.LENGTH_LONG).show()
         }
-
-        cameraExecutor = Executors.newSingleThreadExecutor()
-
-        cameraExecutor.execute {
-            detector = Detector(baseContext, MODEL_PATH, LABELS_PATH, this)
-        }
-
-        if (allPermissionsGranted()) {
-            setupCamera()
-        } else {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
-
-        // Initialize Text-to-Speech
-        textToSpeech = TextToSpeech(this, this)
-
-        setupSignLanguageUI()
     }
 
+    // Add this to your MainActivity
+    override fun onBackPressed() {
+        super.onBackPressed()
+        // Instead of going "back" to home, go back to onboarding
+        startActivity(Intent(this, OnboardingActivity::class.java))
+        finish()
+    }
     private fun setupSignLanguageUI() {
         binding.apply {
             // Start Scanning button
